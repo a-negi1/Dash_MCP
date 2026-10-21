@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+generated_reports/
+generated_sources/
+.sessions/
+.pytest_cache/
