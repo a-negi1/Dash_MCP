@@ -170,3 +170,71 @@ def _detect_domain(col_names: list[str]) -> str:
     return best
 
 
+def profile_csv(csv_bytes: bytes, filename: str = "data.csv") -> DatasetProfile:
+    text = csv_bytes.decode("utf-8-sig", errors="replace")
+    reader = csv.reader(io.StringIO(text))
+    try:
+        headers = next(reader)
+    except StopIteration:
+        headers = []
+    rows = list(reader)
+
+    col_values: dict[str, list[str]] = {h: [] for h in headers}
+    for row in rows:
+        for i, h in enumerate(headers):
+            col_values[h].append(row[i] if i < len(row) else "")
+
+    row_count = len(rows)
+    profiles: list[ColumnProfile] = []
+
+    for h in headers:
+        vals = col_values[h]
+        non_null = [v for v in vals if v.strip() not in ("", "null", "NULL", "None", "NA", "N/A")]
+        null_pct = round(1 - len(non_null) / max(row_count, 1), 4)
+        cardinality = len(set(non_null))
+        sample = non_null[:20]
+
+        data_type = _infer_type(vals)
+        role, semantic_type, aggregation = _classify(h, data_type, cardinality, row_count, sample)
+
+        profiles.append(ColumnProfile(
+            name=h,
+            role=role,
+            semantic_type=semantic_type,
+            data_type=data_type,
+            cardinality=cardinality,
+            null_pct=null_pct,
+            aggregation=aggregation,
+            sample_values=sample[:5],
+        ))
+
+    dimensions = [p.name for p in profiles if p.role == "dimension"]
+    measures = [p.name for p in profiles if p.role == "measure"]
+    temporal_cols = [p.name for p in profiles if p.semantic_type == "temporal"]
+    geo_cols = [p.name for p in profiles if p.semantic_type == "geographic"]
+
+    has_strong_temporal = len(temporal_cols) >= 1
+    has_strong_geo = bool(geo_cols and
+                          any(p.name in geo_cols and p.null_pct < 0.2 and p.cardinality >= 4
+                              for p in profiles))
+    has_part_to_whole = any(
+        p.role == "dimension" and p.semantic_type == "categorical" and 2 <= p.cardinality <= 7
+        for p in profiles
+    )
+    kpi_count = min(4, len(measures))
+
+    domain = _detect_domain(headers)
+
+    return DatasetProfile(
+        row_count=row_count,
+        columns=profiles,
+        dimensions=dimensions,
+        measures=measures,
+        temporal_columns=temporal_cols,
+        geographic_columns=geo_cols,
+        domain_hint=domain,
+        has_strong_temporal=has_strong_temporal,
+        has_strong_geographic=has_strong_geo,
+        has_part_to_whole=has_part_to_whole,
+        kpi_count=kpi_count,
+    )
