@@ -110,3 +110,63 @@ def _infer_type(values: list[str]) -> str:
     return "string"
 
 
+def _infer_aggregation(col_name_lower: str, data_type: str) -> str:
+    if any(k in col_name_lower for k in RATE_KEYWORDS):
+        return "AVG"
+    if any(k in col_name_lower for k in COUNT_KEYWORDS):
+        return "SUM"
+    return "SUM"
+
+
+def _classify(name: str, data_type: str, cardinality: int, row_count: int,
+              sample_values: list) -> tuple[str, str, str]:
+    """Returns (role, semantic_type, aggregation)."""
+    key = _col_key(name)
+    tokens = set(re.split(r"[_\s\-]+", key))
+
+    is_numeric = data_type in ("int64", "decimal")
+    is_temporal = data_type == "dateTime"
+    is_geo = bool(tokens & GEO_KEYWORDS)
+    is_temporal_kw = bool(tokens & TEMPORAL_KEYWORDS)
+    is_measure_kw = bool(tokens & MEASURE_KEYWORDS)
+    is_dimension_kw = bool(tokens & DIMENSION_KEYWORDS)
+
+    if is_temporal or is_temporal_kw:
+        return "dimension", "temporal", "MIN"
+
+    if is_geo:
+        return "dimension", "geographic", "COUNT"
+
+    if is_numeric:
+        if is_measure_kw:
+            agg = _infer_aggregation(key, data_type)
+            sem = "rate" if agg == "AVG" else "currency" if any(k in key for k in ("revenue", "sales", "profit", "cost", "price", "amount", "income", "expense", "budget")) else "numeric"
+            return "measure", sem, agg
+        if is_dimension_kw or (cardinality <= 20 and row_count >= 100):
+            return "dimension", "categorical", "COUNT"
+        if cardinality <= 5 or (row_count > 0 and cardinality / row_count < 0.05 and cardinality <= 30):
+            return "dimension", "categorical", "COUNT"
+        agg = _infer_aggregation(key, data_type)
+        sem = "rate" if agg == "AVG" else "currency" if any(k in key for k in ("revenue", "sales", "profit", "cost", "price", "amount", "income", "expense", "budget")) else "numeric"
+        return "measure", sem, agg
+
+    if is_measure_kw:
+        def _looks_numeric(vals):
+            ok = sum(1 for v in vals if re.fullmatch(r"[-+]?\d*\.?\d+%?", v.strip().replace(",", "")))
+            return ok / max(len(vals), 1) > 0.6
+        if _looks_numeric([str(v) for v in sample_values]):
+            return "measure", "numeric", "SUM"
+
+    return "dimension", "categorical", "COUNT"
+
+
+def _detect_domain(col_names: list[str]) -> str:
+    joined = " ".join(col_names).lower()
+    best, best_score = "general", 0
+    for domain, kws in DOMAIN_SIGNATURES.items():
+        score = sum(1 for k in kws if k in joined)
+        if score >= 2 and score > best_score:
+            best, best_score = domain, score
+    return best
+
+
