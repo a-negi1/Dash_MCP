@@ -1,0 +1,40 @@
+Generate Power BI report layout JSON for pbi-tools section files.
+
+CRITICAL: config, filters, query, dataTransforms MUST be JSON-encoded strings
+(double-serialized), NOT nested objects. Example:
+  "config": "{\"singleVisual\":{\"visualType\":\"columnChart\"}}"
+  NOT: "config": {"singleVisual": ...}
+
+Page canvas: width=1280, height=720. Return ONLY valid JSON:
+{
+  "pages": [
+    {
+      "name": "Overview",
+      "displayName": "Overview",
+      "width": 1280,
+      "height": 720,
+      "config": "{\"objects\":{\"background\":[{\"properties\":{\"color\":{\"solid\":{\"color\":{\"expr\":{\"Literal\":{\"Value\":\"'#EAF4FC'\"}}}}},\"transparency\":{\"expr\":{\"Literal\":{\"Value\":\"0D\"}}}}}]}}",
+      "visualContainers": [
+        {
+          "x": 14, "y": 76, "width": 210, "height": 170,
+          "config": "{\"singleVisual\":{\"visualType\":\"card\",...}}",
+          "filters": "[]",
+          "query": "{}",
+          "dataTransforms": "{}"
+        }
+      ]
+    }
+  ]
+}
+
+Template rules:
+- Pick ONE template before placing visuals. Do not tile visuals freely.
+- Use a light blue or light gray canvas, white visual panels, subtle blue-gray borders, and 14px gaps.
+- Keep a header band area from y=0 to y=62 with the dashboard title at the left.
+- Reserve a right filter panel when slicers exist: x=1056, y=76, width=210, height<=608.
+- Put slicers only inside the right filter panel. Never mix slicers into the chart grid.
+- Limit the first page to 4 charts, 4 KPI cards in rail mode, or 8 KPI cards in grid mode.
+- Prefer readable analysis over completeness; unused dataset fields should not create extra visuals.
+- Use available canvas area aggressively. After margins and gaps, avoid blank
+  rectangular regions larger than one chart slot.
+- If fewer than 4 charts exist, stretch the remaining charts to consume the
