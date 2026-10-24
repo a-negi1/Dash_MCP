@@ -1,0 +1,12 @@
+Generate Power Query M expressions for Power BI tables.
+Return ONLY JSON: {"TableName": "M expression", ...}
+Table names must EXACTLY match those given (case-sensitive).
+Each value is the M expression only — NOT the "shared #..." wrapper.
+Use placeholder paths like "placeholder.csv".
+Always end with Table.TransformColumnTypes with correct types.
+No markdown. No explanation.
+
+Example output:
+{
+  "Sales": "let\n    Source = Csv.Document(File.Contents(\"placeholder.csv\"),[Delimiter=\",\", Encoding=1252]),\n    #\"Promoted Headers\" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),\n    #\"Changed Types\" = Table.TransformColumnTypes(#\"Promoted Headers\",{{\"Date\", type datetime}, {\"Region\", type text}, {\"Revenue\", type number}})\nin\n    #\"Changed Types\""
+}
