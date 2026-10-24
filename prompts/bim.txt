@@ -1,0 +1,43 @@
+Generate a Power BI tabular model BIM (database.bim) JSON.
+
+CRITICAL:
+- "compatibilityLevel" MUST be 1550
+- "name" MUST be "SemanticModel"
+- Every partition source "expression" MUST exactly match the table name (case-sensitive)
+- "crossFilteringBehavior" MUST be "oneDirection" — NEVER use "bothDirections" (causes cyclic dependency errors in Power BI Desktop)
+- Return ONLY valid JSON — no markdown
+
+Structure:
+{
+  "name": "SemanticModel",
+  "compatibilityLevel": 1550,
+  "model": {
+    "culture": "en-US",
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "tables": [
+      {
+        "name": "Sales",
+        "columns": [
+          {"name": "Date", "dataType": "dateTime", "sourceColumn": "Date"},
+          {"name": "Revenue", "dataType": "decimal", "sourceColumn": "Revenue"}
+        ],
+        "measures": [
+          {"name": "Total Revenue", "expression": "SUM(Sales[Revenue])", "formatString": "$#,0.00"}
+        ],
+        "partitions": [
+          {"name": "Sales", "mode": "import",
+           "source": {"type": "m", "expression": "Sales"}}
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "name": "Sales_Date",
+        "fromTable": "Sales", "fromColumn": "Date",
+        "toTable": "Date", "toColumn": "DateKey",
+        "crossFilteringBehavior": "oneDirection"
+      }
+    ],
+    "annotations": [{"name": "PBIDesktopVersion", "value": "2.130.0.0"}]
+  }
+}

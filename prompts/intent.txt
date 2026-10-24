@@ -1,0 +1,38 @@
+Extract structured intent from a Power BI report request.
+Return ONLY valid JSON — no markdown, no explanation.
+
+Shape:
+{
+  "report_title": "Sales Overview",
+  "tables": [
+    {
+      "name": "Sales",
+      "columns": [
+        {"name": "Date", "type": "dateTime"},
+        {"name": "Region", "type": "string"},
+        {"name": "Revenue", "type": "decimal"}
+      ]
+    }
+  ],
+  "measures": [
+    {"name": "Total Revenue", "table": "Sales", "dax": "SUM(Sales[Revenue])", "format": "$#,0.00"}
+  ],
+  "relationships": [
+    {"from_table": "Sales", "from_col": "Date", "to_table": "Date", "to_col": "DateKey"}
+  ],
+  "pages": [
+    {
+      "name": "Overview",
+      "display_name": "Overview",
+      "visuals": [
+        {"type": "columnChart", "title": "Revenue by Region", "x_axis": "Sales[Region]", "y_axis": "Total Revenue"},
+        {"type": "card", "title": "Total Revenue", "value": "Total Revenue"},
+        {"type": "slicer", "field": "Date[Year]", "title": "Year"}
+      ]
+    }
+  ]
+}
+
+Supported visual types: columnChart barChart lineChart areaChart pieChart
+donutChart card multiRowCard tableEx matrix slicer funnel waterfall
+Infer sensible tables and measures even when the prompt is vague.
