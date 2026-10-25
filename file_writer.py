@@ -238,3 +238,93 @@ def _build_report_layout(layout: dict) -> dict:
         page = _fix_serialization(page)
         visual_containers = []
         for z, vc in enumerate(page.get("visualContainers", [])):
+            visual_containers.append({
+                "x": vc.get("x", 0),
+                "y": vc.get("y", 0),
+                "z": vc.get("z", z),
+                "width": vc.get("width", 300),
+                "height": vc.get("height", 200),
+                "config": vc.get("config", "{}"),
+                "filters": vc.get("filters", "[]"),
+                "query": vc.get("query", "{}"),
+                "dataTransforms": vc.get("dataTransforms", "{}"),
+            })
+        sections.append({
+            "name": page.get("name", f"ReportSection{ordinal}"),
+            "displayName": page.get("displayName", page.get("name", "Page 1")),
+            "filters": page.get("filters", "[]"),
+            "ordinal": ordinal,
+            "visualContainers": visual_containers,
+            "config": page.get("config", "{}"),
+            "width": page.get("width", 1280),
+            "height": page.get("height", 720),
+        })
+
+    return {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "pods": [],
+        "resourcePackages": [],
+        "sections": sections,
+        "theme": {"name": "CY24SU10", "version": "5.59"},
+        "config": json.dumps({
+            "version": "5.59",
+            "themeCollection": {
+                "baseTheme": {"name": "CY24SU10", "version": "5.59", "type": 2}
+            },
+            "activeSectionIndex": 0,
+            "defaultDrillFilterOtherVisuals": True,
+            "slowDataSourceSettings": {
+                "isCrossHighlightingDisabled": False,
+                "isSlicerSelectionsButtonEnabled": False,
+                "isFilterSelectionsButtonEnabled": False,
+                "isFieldWellButtonEnabled": False,
+                "isApplyAllButtonEnabled": False
+            },
+            "linguisticSchemaSyncVersion": 2,
+            "settings": {}
+        }, separators=(",", ":")),
+        "filters": "[]",
+    }
+
+
+def _replace_zip_entries(pbit_path: str, replacements: dict[str, bytes]) -> None:
+    tmp = pbit_path + ".tmp"
+    with zipfile.ZipFile(pbit_path, "r") as src:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
+            for info in src.infolist():
+                if info.filename not in replacements:
+                    dst.writestr(info, src.read(info.filename))
+            for name, data in replacements.items():
+                dst.writestr(name, data)
+    shutil.move(tmp, pbit_path)
+
+
+def _build_package_zip(m_code: dict) -> bytes:
+    """Build the inner Package zip that lives inside DataMashup."""
+    m_lines = ["section Section1;"]
+    for name, expr in m_code.items():
+        m_lines.append(f'\nshared #"{name}" = {expr};')
+    m_text = "\n".join(m_lines)
+
+    content_types = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="m" ContentType="application/m" />'
+        '<Default Extension="xml" ContentType="application/xml" />'
+        "</Types>"
+    )
+    package_xml = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<Package xmlns="http://schemas.microsoft.com/DataMashup">'
+        "<Version>2.87.0</Version><MinVersion>2.87.0</MinVersion>"
+        "<Culture>en-US</Culture>"
+        "<Items><Item Id=\"Section1\" Type=\"Section\" /></Items>"
+        "</Package>"
+    )
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("Formulas/Section1.m", m_text.encode("utf-8"))
+        zf.writestr("Package.xml", package_xml)
+    return buf.getvalue()
