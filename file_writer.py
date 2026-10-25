@@ -148,3 +148,93 @@ def _fix_serialization(page: dict) -> dict:
 
 def _remove_generated_sort_metadata(vc: dict) -> None:
     """Avoid Desktop 2026 renderer crashes from generated sort expressions."""
+    raw = vc.get("config")
+    if isinstance(raw, str):
+        try:
+            config = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+    elif isinstance(raw, dict):
+        config = raw
+    else:
+        return
+
+    _strip_sort_keys(config)
+
+    if isinstance(raw, str):
+        vc["config"] = json.dumps(config, ensure_ascii=False,
+                                  separators=(",", ":"))
+
+
+def _strip_sort_keys(value):
+    if isinstance(value, dict):
+        for key in list(value.keys()):
+            if key in {
+                "OrderBy",
+                "Sort",
+                "sort",
+                "SortDefinitions",
+                "sortDefinitions",
+                "hasDefaultSort",
+            }:
+                value.pop(key, None)
+            else:
+                _strip_sort_keys(value[key])
+    elif isinstance(value, list):
+        for item in value:
+            _strip_sort_keys(item)
+
+
+def inject_data_mashup(pbit_path: str, m_code: dict) -> None:
+    """
+    pbi-tools.core (NET8) cannot write DataMashup (NETFRAMEWORK-only DLL).
+    We manually build and inject the PackageComponents binary into the PBIT zip.
+
+    PackageComponents binary layout:
+      [4-byte LE] length of Package zip
+      [Package zip bytes]  — zip archive with Formulas/Section1.m
+      [4-byte LE] length of Permissions bytes
+      [Permissions bytes]  — minimal XML (no credentials)
+      [4-byte LE] length of Metadata bytes
+      [Metadata bytes]     — empty for placeholder reports
+    """
+    package_zip = _build_package_zip(m_code)
+    permissions = (
+        b'<?xml version="1.0" encoding="utf-8"?>'
+        b'<Permissions xmlns="http://schemas.microsoft.com/DataMashup/'
+        b'DataSourcePermissions" />'
+    )
+    metadata = b""
+
+    mashup_bytes = (
+        struct.pack("<I", len(package_zip)) + package_zip
+        + struct.pack("<I", len(permissions)) + permissions
+        + struct.pack("<I", len(metadata)) + metadata
+    )
+
+    _replace_zip_entries(pbit_path, {"DataMashup": mashup_bytes})
+
+
+def inject_report_layout(pbit_path: str, layout: dict) -> None:
+    """Write Report/Layout directly into the compiled PBIT.
+
+    The pbi-tools compile step preserves the semantic model, but with this
+    project shape it emits an empty Report/Layout sections array. Power BI
+    reads Report/Layout from the package, so we inject the generated pages
+    after compile.
+    """
+    report = _build_report_layout(layout)
+    layout_bytes = json.dumps(
+        report,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-16le")
+    _replace_zip_entries(pbit_path, {"Report/Layout": layout_bytes})
+
+
+def _build_report_layout(layout: dict) -> dict:
+    sections = []
+    for ordinal, page in enumerate(layout.get("pages", [])):
+        page = _fix_serialization(page)
+        visual_containers = []
+        for z, vc in enumerate(page.get("visualContainers", [])):
