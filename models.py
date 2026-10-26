@@ -74,3 +74,40 @@ class DatasetProfile(BaseModel):
     kpi_count: int
 
 class ProjectState(BaseModel):
+    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
+    intent: Optional[ReportIntent] = None
+    bim: Optional[dict] = None
+    m_code: Optional[dict] = None
+    layout: Optional[dict] = None
+    palette: Optional[ColorPalette] = None
+    theme: Optional[dict] = None
+    pbix_path: Optional[str] = None
+    project_dir: Optional[str] = None
+    dataset_profile: Optional[DatasetProfile] = None
+    csv_filename: Optional[str] = None
+    history: list[str] = []
+
+class GenerateRequest(BaseModel):
+    prompt: str
+    session_id: Optional[str] = None
+
+class AddVisualRequest(BaseModel):
+    session_id: str
+    description: str
+    page_name: str = "Overview"
+
+class EditRequest(BaseModel):
+    session_id: str
+    instruction: str
+
+class FilterRequest(BaseModel):
+    session_id: str
+    filter_description: str
+    page_name: Optional[str] = None
+
+class ThemeImageRequest(BaseModel):
+    session_id: str
+    image_base64: str
+    media_type: str = "image/png"  # image/png | image/jpeg

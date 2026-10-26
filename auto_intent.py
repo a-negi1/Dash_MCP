@@ -498,3 +498,391 @@ def _visual_config(table_name: str, visual_type: str, title: str,
                     "properties": {
                         "show": _literal_bool(True),
                         "color": _color_expr("#CFE3F2"),
+                    }
+                }],
+                "visualHeader": [{
+                    "properties": {"show": _literal_bool(False)}
+                }],
+                "legend": [{
+                    "properties": {"show": _literal_bool(False)}
+                }],
+                "categoryAxis": [{
+                    "properties": {
+                        "show": _literal_bool(True),
+                        "labelColor": {"solid": {"color": {"expr": {"Literal": {"Value": "'#605E5C'"}}}}},
+                    }
+                }],
+                "valueAxis": [{
+                    "properties": {
+                        "show": _literal_bool(True),
+                        "labelColor": {"solid": {"color": {"expr": {"Literal": {"Value": "'#605E5C'"}}}}},
+                        "gridlineColor": {"solid": {"color": {"expr": {"Literal": {"Value": "'#EDEBE9'"}}}}},
+                    }
+                }],
+                "dataPoint": [{
+                    "properties": {
+                        "defaultColor": {"solid": {"color": {"expr": {"Literal": {"Value": "'#2D5BFF'"}}}}},
+                    }
+                }],
+            },
+            "vcObjects": {
+                "title": [{
+                    "properties": {
+                        "show": _literal_bool(True),
+                        "text": _literal(title.upper()),
+                        "fontColor": {"solid": {"color": {"expr": {"Literal": {"Value": "'#252423'"}}}}},
+                        "fontSize": _literal_num(12),
+                    }
+                }]
+            },
+        },
+    }
+    return cfg
+
+
+def _vc(x, y, w, h, visual_type, title, config_extra: dict = None) -> dict:
+    cfg = config_extra or {"singleVisual": {"visualType": visual_type, "title": title}}
+    return {
+        "x": x, "y": y, "width": w, "height": h,
+        "config": json.dumps(cfg, separators=(",", ":")),
+        "filters": "[]",
+        "query": "{}",
+        "dataTransforms": "{}",
+    }
+
+
+def _textbox_config(text: str, font_size: int = 20, color: str = "#252423",
+                    bold: bool = True) -> dict:
+    return {
+        "name": str(uuid.uuid4()),
+        "singleVisual": {
+            "visualType": "textbox",
+            "objects": {
+                "general": [{
+                    "properties": {
+                        "paragraphs": [{
+                            "textRuns": [{
+                                "value": text,
+                                "textStyle": {
+                                    "fontSize": f"{font_size}pt",
+                                    "fontFamily": "Segoe UI",
+                                    "fontWeight": "bold" if bold else "normal",
+                                    "color": color,
+                                },
+                            }],
+                        }]
+                    }
+                }]
+            },
+        },
+    }
+
+
+def _textbox_vc(x: int, y: int, w: int, h: int, text: str,
+                font_size: int = 20, color: str = "#252423",
+                bold: bool = True) -> dict:
+    return _vc(
+        x, y, w, h, "textbox", text,
+        _textbox_config(text, font_size=font_size, color=color, bold=bold),
+    )
+
+
+def _page_config(background: str = "#EAF4FC") -> str:
+    return json.dumps({
+        "objects": {
+            "background": [{
+                "properties": {
+                    "color": _color_expr(background),
+                    "transparency": _literal_num(0),
+                }
+            }]
+        }
+    }, separators=(",", ":"))
+
+
+def _append_card(containers: list, intent: ReportIntent, card: VisualIntent,
+                 x: int, y: int, w: int, h: int) -> None:
+    value_table, value_col = _measure_column(intent, card.value)
+    containers.append(_vc(
+        x=x, y=y, w=w, h=h,
+        visual_type="card", title=card.title,
+        config_extra=_visual_config(
+            value_table, "card", card.title,
+            x, y, w, h,
+            value_col=value_col,
+            value_measure=card.value,
+            role_overrides={"value": ["Values"]},
+        ) if card.value else None,
+    ))
+
+
+def _append_chart(containers: list, intent: ReportIntent, visual: VisualIntent,
+                  table_name: str, x: int, y: int, w: int, h: int) -> None:
+    if visual.type == "slicer":
+        field_table, field_col = _field_parts(visual.field, table_name)
+        cfg = _visual_config(field_table, "slicer", visual.title,
+                             x, y, w, h, category_col=field_col)
+        cfg["singleVisual"]["projections"] = {
+            "Values": [{"queryRef": f"{field_table}.{field_col}", "active": True}]
+        }
+        containers.append(_vc(x, y, w, h, "slicer", visual.title,
+                              cfg if visual.field else None))
+        return
+
+    cat_table, cat_col = _field_parts(visual.x_axis, table_name)
+    value_table, value_col = _measure_column(intent, visual.y_axis)
+    visual_type = visual.type if visual.type in {
+        "barChart", "columnChart", "lineChart", "pieChart", "tableEx"
+    } else "barChart"
+    containers.append(_vc(
+        x, y, w, h, visual_type, visual.title,
+        _visual_config(
+            value_table or cat_table, visual_type, visual.title,
+            x, y, w, h, cat_col, value_col,
+            value_measure=visual.y_axis,
+            role_overrides={"value": ["Y", "Values"]} if visual_type == "pieChart" else None,
+        ) if visual.x_axis else None,
+    ))
+
+
+def build_layout_from_intent(intent: ReportIntent) -> dict:
+    pages = []
+    table_name = intent.tables[0].name if intent.tables else "Table"
+    for page in intent.pages:
+        visuals = page.visuals
+        containers = []
+        card_w, card_h = 240, 100
+        gap = 16
+        top_y = 20
+
+        cards = [v for v in visuals if v.type == "card"]
+        for i, card in enumerate(cards[:4]):
+            value_table, value_col = _measure_column(intent, card.value)
+            containers.append(_vc(
+                x=20 + i * (card_w + gap),
+                y=top_y,
+                w=card_w,
+                h=card_h,
+                visual_type="card",
+                title=card.title,
+                config_extra=_visual_config(
+                    value_table, "card", card.title,
+                    20 + i * (card_w + gap), top_y, card_w, card_h,
+                    value_col=value_col,
+                    role_overrides={"value": ["Values"]},
+                ) if card.value else None,
+            ))
+
+        chart_y = top_y + card_h + gap  # 136
+        chart_h = 260
+        slicer_y = chart_y + chart_h + gap  # 412
+        slicer_h = 60
+
+        bar_added = False
+        line_added = False
+
+        for v in visuals:
+            if v.type == "barChart" and not bar_added:
+                cat_table, cat_col = _field_parts(v.x_axis, table_name)
+                value_table, value_col = _measure_column(intent, v.y_axis)
+                containers.append(_vc(20, chart_y, 580, chart_h, "barChart", v.title,
+                    _visual_config(value_table or cat_table, "barChart", v.title,
+                                   20, chart_y, 580, chart_h, cat_col, value_col)
+                    if v.x_axis else None))
+                bar_added = True
+            elif v.type == "lineChart" and not line_added:
+                cat_table, cat_col = _field_parts(v.x_axis, table_name)
+                value_table, value_col = _measure_column(intent, v.y_axis)
+                containers.append(_vc(620, chart_y, 620, chart_h, "lineChart", v.title,
+                    _visual_config(value_table or cat_table, "lineChart", v.title,
+                                   620, chart_y, 620, chart_h, cat_col, value_col)
+                    if v.x_axis else None))
+                line_added = True
+
+        pie_added = False
+        slicer_added = False
+        for v in visuals:
+            if v.type == "pieChart" and not pie_added:
+                cat_table, cat_col = _field_parts(v.x_axis, table_name)
+                value_table, value_col = _measure_column(intent, v.y_axis)
+                containers.append(_vc(20, slicer_y, 280, 200, "pieChart", v.title,
+                    _visual_config(value_table or cat_table, "pieChart", v.title,
+                                   20, slicer_y, 280, 200, cat_col, value_col,
+                                   role_overrides={"value": ["Y", "Values"]})
+                    if v.x_axis else None))
+                pie_added = True
+            elif v.type == "slicer" and not slicer_added:
+                field_table, field_col = _field_parts(v.field, table_name)
+                cfg = _visual_config(field_table, "slicer", v.title,
+                                     320, slicer_y, 200, slicer_h,
+                                     category_col=field_col)
+                cfg["singleVisual"]["projections"] = {
+                    "Values": [{"queryRef": f"{field_table}.{field_col}", "active": True}]
+                }
+                containers.append(_vc(320, slicer_y, 200, slicer_h, "slicer", v.title,
+                    cfg if v.field else None))
+                slicer_added = True
+
+        pages.append({
+            "name": page.name,
+            "displayName": page.display_name,
+            "width": 1280,
+            "height": 720,
+            "visualContainers": containers,
+        })
+
+    return {"pages": pages}
+
+
+def build_layout_from_intent(intent: ReportIntent) -> dict:
+    """Build a clean template-based dashboard layout.
+
+    Visuals are assigned to fixed template slots instead of being tiled freely.
+    This keeps the page readable and mirrors the supplied reference dashboards:
+    a light canvas, white panels, KPI rail/grid, main chart area, and a reserved
+    right-side filter panel.
+    """
+    pages = []
+    table_name = intent.tables[0].name if intent.tables else "Table"
+    for page in intent.pages:
+        visuals = page.visuals
+        containers = []
+        gap = 14
+        margin = 14
+        canvas_w, canvas_h = 1280, 720
+        header_h = 62
+        footer_h = 22
+
+        containers.append(_textbox_vc(
+            margin + 54, 12, 640, 42, intent.report_title,
+            font_size=20, color="#252423", bold=True,
+        ))
+        containers.append(_textbox_vc(
+            margin, 14, 44, 36, "RF",
+            font_size=14, color="#0EA5E9", bold=True,
+        ))
+        containers.append(_textbox_vc(
+            938, 18, 320, 30, page.display_name,
+            font_size=12, color="#0F5EA8", bold=True,
+        ))
+
+        cards = [v for v in visuals if v.type == "card"]
+        slicers = [v for v in visuals if v.type == "slicer"]
+        charts = [
+            v for v in visuals
+            if v.type in {"barChart", "columnChart", "lineChart", "pieChart", "tableEx"}
+        ]
+
+        if len(cards) <= 4:
+            left_w = 210
+            right_w = 210
+            main_x = margin + left_w + gap
+            has_filter_panel = bool(slicers)
+            right_x = canvas_w - margin - right_w if has_filter_panel else canvas_w - margin
+            main_w = right_x - gap - main_x if has_filter_panel else right_x - main_x
+            content_y = header_h + gap
+            content_h = canvas_h - content_y - footer_h - gap
+
+            kpi_count = min(max(len(cards), 1), 4)
+            kpi_h = int((content_h - gap * (kpi_count - 1)) / kpi_count)
+            for i, card in enumerate(cards[:4]):
+                _append_card(
+                    containers, intent, card,
+                    margin, content_y + i * (kpi_h + gap), left_w, kpi_h,
+                )
+
+            chart_count = min(len(charts), 4)
+            col_w = int((main_w - gap) / 2)
+            row_h = int((content_h - gap) / 2)
+            if chart_count == 1:
+                slots = [(main_x, content_y, main_w, content_h)]
+            elif chart_count == 2:
+                slots = [
+                    (main_x, content_y, col_w, content_h),
+                    (main_x + col_w + gap, content_y, col_w, content_h),
+                ]
+            elif chart_count == 3:
+                slots = [
+                    (main_x, content_y, col_w, row_h),
+                    (main_x + col_w + gap, content_y, col_w, row_h),
+                    (main_x, content_y + row_h + gap, main_w, row_h),
+                ]
+            else:
+                slots = [
+                    (main_x, content_y, col_w, row_h),
+                    (main_x + col_w + gap, content_y, col_w, row_h),
+                    (main_x, content_y + row_h + gap, col_w, row_h),
+                    (main_x + col_w + gap, content_y + row_h + gap, col_w, row_h),
+                ]
+            for visual, slot in zip(charts[:4], slots):
+                _append_chart(containers, intent, visual, table_name, *slot)
+
+            if has_filter_panel:
+                containers.append(_textbox_vc(
+                    right_x + 16, content_y + 16, right_w - 32, 30, "FILTERS",
+                    font_size=11, color="#252423", bold=True,
+                ))
+                available_filter_h = content_h - 58
+                slicer_count = min(len(slicers), 3)
+                slicer_h = max(104, int((available_filter_h - gap * max(slicer_count - 1, 0)) / max(slicer_count, 1)))
+                for i, slicer in enumerate(slicers[:3]):
+                    _append_chart(
+                        containers, intent, slicer, table_name,
+                        right_x + 16,
+                        content_y + 58 + i * (slicer_h + gap),
+                        right_w - 32,
+                        slicer_h,
+                    )
+
+        else:
+            right_w = 210
+            right_x = canvas_w - margin - right_w
+            main_w = right_x - gap - margin
+            kpi_y = header_h + gap
+            kpi_h = 68
+            kpi_cols = 4
+            kpi_w = int((main_w - gap * (kpi_cols - 1)) / kpi_cols)
+            for i, card in enumerate(cards[:8]):
+                row = i // kpi_cols
+                col = i % kpi_cols
+                _append_card(
+                    containers, intent, card,
+                    margin + col * (kpi_w + gap),
+                    kpi_y + row * (kpi_h + gap),
+                    kpi_w, kpi_h,
+                )
+
+            chart_y = kpi_y + (2 * kpi_h) + gap * 2
+            chart_h = 210
+            chart_w = int((main_w - gap * 2) / 3)
+            for visual, i in zip(charts[:3], range(3)):
+                _append_chart(
+                    containers, intent, visual, table_name,
+                    margin + i * (chart_w + gap), chart_y, chart_w, chart_h,
+                )
+            if len(charts) > 3:
+                _append_chart(
+                    containers, intent, charts[3], table_name,
+                    margin, chart_y + chart_h + gap, main_w, 190,
+                )
+
+            containers.append(_textbox_vc(
+                right_x + 16, kpi_y + 16, right_w - 32, 30, "FILTERS",
+                font_size=11, color="#252423", bold=True,
+            ))
+            for i, slicer in enumerate(slicers[:4]):
+                _append_chart(
+                    containers, intent, slicer, table_name,
+                    right_x + 16, kpi_y + 58 + i * 112, right_w - 32, 92,
+                )
+
+        pages.append({
+            "name": page.name,
+            "displayName": page.display_name,
+            "width": canvas_w,
+            "height": canvas_h,
+            "config": _page_config("#EAF4FC"),
+            "visualContainers": containers,
+        })
+
+    return {"pages": pages}
