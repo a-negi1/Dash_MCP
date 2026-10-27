@@ -178,3 +178,53 @@ def persist_csv_source(csv_bytes: bytes, filename: str, session_id: str) -> Path
     safe_filename = re.sub(r"[^A-Za-z0-9_. -]", "_", Path(filename).name)
     if not safe_filename or safe_filename in {".", ".."}:
         safe_filename = "data.csv"
+    source_dir = Path(__file__).resolve().parent / "generated_sources" / session_id
+    source_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = source_dir / safe_filename
+    csv_path.write_bytes(csv_bytes)
+    return csv_path.resolve()
+
+
+def _report_title_from_prompt(prompt: str, fallback: str) -> str:
+    clean = " ".join(prompt.split()).strip()
+    if not clean:
+        return fallback
+    if len(clean) > 70 or clean.count(" ") > 10:
+        return fallback
+    safe = re.sub(r"[^A-Za-z0-9&,.() -]", "", clean).strip(" .-_")
+    return safe.title() if safe else fallback
+
+
+def inline_m_partition_sources(bim: dict | None, m_code: dict) -> None:
+    if not bim or not m_code:
+        return
+    for table in bim.get("model", {}).get("tables", []):
+        table_name = table.get("name")
+        for partition in table.get("partitions", []):
+            source = partition.get("source", {})
+            expr = source.get("expression", "")
+            expr_text = "\n".join(expr) if isinstance(expr, list) else str(expr)
+            query_name = expr_text.strip().strip('"')
+            if query_name in m_code:
+                source["expression"] = m_code[query_name]
+            elif table_name in m_code and not expr_text.strip().lower().startswith("let"):
+                source["expression"] = m_code[table_name]
+
+
+def _find_pbi_tools() -> str:
+    import shutil
+    for candidate in ["pbi-tools.core.exe", "pbi-tools.core", "pbi-tools"]:
+        path = shutil.which(candidate)
+        if path:
+            return path
+    dotnet_tools = Path.home() / ".dotnet" / "tools"
+    for candidate in ["pbi-tools.core.exe", "pbi-tools.exe", "pbi-tools"]:
+        path = dotnet_tools / candidate
+        if path.exists():
+            return str(path)
+    default = r"C:\pbi-tools\pbi-tools.core.exe"
+    if os.path.exists(default):
+        return default
+    raise FileNotFoundError(
+        "pbi-tools not found. Download from https://github.com/pbi-tools/pbi-tools/releases "
+        "and ensure it is on PATH or installed at C:\\pbi-tools\\"
