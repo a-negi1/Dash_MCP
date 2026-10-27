@@ -118,3 +118,63 @@ async def pipeline_from_csv(csv_bytes: bytes, filename: str = "data.csv",
             prompt,
             intent.report_title,
         )
+    state.intent = intent
+
+    table_name = intent.tables[0].name
+    state.m_code = build_m_from_profile(profile, table_name, str(csv_path))
+    state.bim = build_bim_from_profile(profile, table_name)
+    inline_m_partition_sources(state.bim, state.m_code)
+    state.layout = build_layout_from_intent(intent)
+
+    validate_all(state)
+    state.project_dir = tempfile.mkdtemp(prefix=f"pbi_{state.session_id}_")
+    write_project(state)
+    state.pbix_path = compile_and_inject(state.project_dir, state.m_code, state.layout or {})
+
+    state.history.append(f"create_from_csv: {filename}")
+    save_session(state)
+    return state
+
+
+async def pipeline_export(session_id: str) -> tuple[ProjectState, str]:
+    state = require_session(session_id)
+    inline_m_partition_sources(state.bim, state.m_code or {})
+    write_project(state)
+    pbix_path = compile_and_inject(state.project_dir, state.m_code or {}, state.layout or {})
+    state.pbix_path = pbix_path
+    save_session(state)
+    return state, pbix_path
+
+
+def compile_project(project_dir: str) -> str:
+    out_path = os.path.join(project_dir, "output.pbit")
+    exe = _find_pbi_tools()
+    result = subprocess.run(
+        [exe, "compile", project_dir, out_path, "PBIT", "True"],
+        capture_output=True, text=True, timeout=120
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError(
+            f"pbi-tools compile failed (exit {result.returncode})\n"
+            f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+        )
+    if not os.path.exists(out_path):
+        raise RuntimeError(
+            f"pbi-tools compile ran but no output file at {out_path}\n"
+            f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+        )
+    return out_path
+
+
+def compile_and_inject(project_dir: str, m_code: dict, layout: dict | None = None) -> str:
+    pbit_path = compile_project(project_dir)
+    inject_data_mashup(pbit_path, m_code)
+    if layout:
+        inject_report_layout(pbit_path, layout)
+    return pbit_path
+
+
+def persist_csv_source(csv_bytes: bytes, filename: str, session_id: str) -> Path:
+    safe_filename = re.sub(r"[^A-Za-z0-9_. -]", "_", Path(filename).name)
+    if not safe_filename or safe_filename in {".", ".."}:
+        safe_filename = "data.csv"
