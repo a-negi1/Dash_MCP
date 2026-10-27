@@ -228,3 +228,4 @@ def _find_pbi_tools() -> str:
     raise FileNotFoundError(
         "pbi-tools not found. Download from https://github.com/pbi-tools/pbi-tools/releases "
         "and ensure it is on PATH or installed at C:\\pbi-tools\\"
+    )
