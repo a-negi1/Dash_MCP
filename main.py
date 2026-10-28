@@ -63,3 +63,43 @@ def server_card():
         ]
     })
 
+
+@app.get("/reports/{filename}")
+def download_report(filename: str):
+    safe_name = Path(filename).name
+    report_path = (OUTPUT_DIR / safe_name).resolve()
+    output_root = OUTPUT_DIR.resolve()
+    if output_root not in report_path.parents and report_path != output_root:
+        raise HTTPException(status_code=400, detail="Invalid report path")
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail="Report not found or expired")
+    return FileResponse(
+        report_path,
+        media_type="application/octet-stream",
+        filename=safe_name,
+    )
+
+@app.post("/generate")
+async def generate(
+    prompt: str = Form(...),
+    schema_file: UploadFile = File(None),
+    image_file: UploadFile = File(None)
+):
+    schema_hint = ""
+    if schema_file:
+        schema_hint = (await schema_file.read()).decode(errors="replace")[:4000]
+
+    image_base64 = None
+    media_type = "image/png"
+    if image_file:
+        img_bytes = await image_file.read()
+        image_base64 = base64.b64encode(img_bytes).decode()
+        media_type = image_file.content_type or "image/png"
+
+    state = await pipeline_create(prompt, schema_hint, image_base64, media_type)
+    return FileResponse(
+        state.pbix_path,
+        media_type="application/octet-stream",
+        filename=f"{_safe_filename(state.intent.report_title)}.pbit"
+    )
+
