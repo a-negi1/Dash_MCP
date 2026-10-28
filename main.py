@@ -23,7 +23,7 @@ _mcp_asgi = mcp.http_app(path="/", transport="streamable-http")
 app = FastAPI(
     title="DashMCP PBI",
     description="Power BI .pbix generator with image theming, NL editing, and MCP support",
-    version="1.0.0",
+    version="0.9.0",
     lifespan=_mcp_asgi.lifespan,
 )
 
@@ -138,3 +138,35 @@ async def export(session_id: str):
         filename=f"{_safe_filename(state.intent.report_title if state.intent else 'report')}.pbit"
     )
 
+@app.post("/generate-from-csv")
+async def generate_from_csv(
+    csv_file: UploadFile = File(...),
+    prompt: str = Form(""),
+    image_file: UploadFile = File(None)
+):
+    csv_bytes = await csv_file.read()
+    image_base64 = None
+    media_type = "image/png"
+    if image_file:
+        img_bytes = await image_file.read()
+        image_base64 = base64.b64encode(img_bytes).decode()
+        media_type = image_file.content_type or "image/png"
+    state = await pipeline_from_csv(
+        csv_bytes, csv_file.filename or "data.csv",
+        prompt, image_base64, media_type
+    )
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    title = state.intent.report_title if state.intent else "report"
+    public_path = OUTPUT_DIR / f"{_safe_filename(title)}_{state.session_id[:8]}.pbit"
+    public_path.write_bytes(Path(state.pbix_path).read_bytes())
+    return FileResponse(
+        state.pbix_path,
+        media_type="application/octet-stream",
+        filename=f"{_safe_filename(state.intent.report_title)}.pbit"
+    )
+
+
+@app.get("/session/{session_id}/state")
+def get_state(session_id: str):
+    state = require_session(session_id)
+    return JSONResponse(state.model_dump(exclude={"bim", "m_code", "layout"}))
