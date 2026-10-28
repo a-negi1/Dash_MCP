@@ -103,3 +103,38 @@ async def generate(
         filename=f"{_safe_filename(state.intent.report_title)}.pbit"
     )
 
+@app.post("/session/{session_id}/add-visual")
+async def add_visual(session_id: str, description: str = Form(...),
+                     page_name: str = Form("Overview")):
+    state = await pipeline_add_visual(session_id, description, page_name)
+    return {"session_id": session_id, "status": "visual added"}
+
+@app.post("/session/{session_id}/theme")
+async def apply_theme(session_id: str, image_file: UploadFile = File(...)):
+    img_bytes = await image_file.read()
+    image_base64 = base64.b64encode(img_bytes).decode()
+    state = await pipeline_apply_theme(
+        session_id, image_base64, image_file.content_type or "image/png"
+    )
+    return {"session_id": session_id, "colors": state.palette.data_colors}
+
+@app.post("/session/{session_id}/style")
+async def edit_style(session_id: str, instruction: str = Form(...)):
+    state = await pipeline_edit_style(session_id, instruction)
+    return {"session_id": session_id, "status": "styling updated"}
+
+@app.post("/session/{session_id}/filter")
+async def add_filter(session_id: str, filter_description: str = Form(...),
+                     page_name: str = Form(None)):
+    state = await pipeline_add_filter(session_id, filter_description, page_name)
+    return {"session_id": session_id, "status": "filter added"}
+
+@app.get("/session/{session_id}/export")
+async def export(session_id: str):
+    state, pbix_path = await pipeline_export(session_id)
+    return FileResponse(
+        pbix_path,
+        media_type="application/octet-stream",
+        filename=f"{_safe_filename(state.intent.report_title if state.intent else 'report')}.pbit"
+    )
+
