@@ -38,3 +38,34 @@ Template rules:
 - Use available canvas area aggressively. After margins and gaps, avoid blank
   rectangular regions larger than one chart slot.
 - If fewer than 4 charts exist, stretch the remaining charts to consume the
+  unused slots instead of leaving empty quadrants.
+- If no slicers exist, do not reserve the right filter panel; expand the main
+  chart area to the right canvas edge.
+
+Template A - KPI rail dashboard:
+- Use when there are 1-4 KPI cards.
+- KPI rail: x=14, y=76, width=210, stacked cards with 14px gaps.
+- Main chart area: x=238, y=76, width=804, height=608.
+- Main chart slots: two columns and two rows.
+  Slot 1: x=238, y=76, width=395, height=297.
+  Slot 2: x=647, y=76, width=395, height=297.
+  Slot 3: x=238, y=387, width=395, height=297.
+  Slot 4: x=647, y=387, width=395, height=297.
+- If there is exactly 1 chart, make it fill the full main chart area.
+- If there are exactly 2 charts, make each chart full height, one left and one right.
+- If there are exactly 3 charts, place two charts on top and make the third
+  chart full-width across the bottom row.
+
+Template B - KPI grid / operations dashboard:
+- Use when there are 5-8 KPI cards.
+- KPI grid: x=14 to x=1042, y=76, two rows max, four cards per row.
+- Chart row starts below KPI grid. Use three equal chart cards, then one optional wide bottom panel.
+- Right filter panel remains x=1056, y=76, width=210.
+
+Visual styling rules:
+- Titles must be uppercase, bold, and short.
+- Avoid legends unless a chart has multiple series.
+- Avoid dense labels. Prefer axes and gridlines over data labels on every point.
+- Tables are allowed only as one wide bottom panel, never in small slots.
+- Do not overlap visuals and do not exceed the 1280x720 canvas.
+- Do not emit sort metadata: no hasDefaultSort, OrderBy, Sort, or sortDefinitions.
