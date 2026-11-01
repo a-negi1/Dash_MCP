@@ -218,3 +218,56 @@ Optional. Adds a **DashMCP PBI** button to the External Tools ribbon in Power BI
                   build_m_for_source      →  Power Query M
                   build_layout_from_intent →  report layout (visuals + theme)
                         │
+                        ▼
+                  pbi-tools.core compile  →  .pbit
+                  inject_data_mashup       (DataMashup binary)
+                  inject_report_layout     (Report/Layout)
+                        │
+                        ▼
+                      .pbit file
+```
+
+Key files:
+- `main.py` — FastAPI app, endpoints, static UI mount.
+- `orchestrator.py` — pipelines (`pipeline_from_csv`, `pipeline_from_source`).
+- `data_profiler.py` — CSV profiler.
+- `data_sources.py` — DB profilers + M generators for MSSQL / Postgres / Oracle.
+- `auto_intent.py` — deterministic intent + layout builder, regex prompt parser.
+- `llm_intent.py` — LLM-driven prompt parser (Groq + OpenAI).
+- `image_analyzer.py` — palette extraction and layout hint extraction from reference images.
+- `file_writer.py` — writes the project tree, injects DataMashup + Report/Layout.
+- `mcp_server.py` — MCP tools for Claude Desktop.
+- `static/index.html` — browser UI.
+
+---
+
+## Troubleshooting
+
+**`.pbit` won't open / "An error occurred while opening the file".**
+Usually a stale generation in `generated_reports/`. Delete and regenerate. If it persists, check the server logs — `pbi-tools.core` errors usually show up there.
+
+**External Tools button doesn't appear in Power BI Desktop.**
+Most often a Fabric tenant policy. See the troubleshooting section in `EXTERNAL_TOOL_SETUP.md`.
+
+**LLM call fails silently.**
+When the LLM call errors or returns an empty visuals list, DashMCP falls back to the deterministic builder and surfaces `llm:<provider>-empty` in the `X-DashMCP-Parser` response header (visible in the UI status message). Double-check the key value, the provider dropdown, and that `openai` is installed (`pip install openai`) if you picked OpenAI.
+
+**SQL profiling fails with "pyodbc/psycopg2/oracledb is required".**
+Install the relevant driver into the venv (see [SQL data sources](#sql-data-sources)).
+
+**Generation succeeds but the dashboard looks plain blue, not like my reference image.**
+The local Pillow palette extractor is more conservative than the Groq vision path. If you have a `GROQ_API_KEY` set, the vision path gives better color results. Or open the resulting `.pbit` and tweak the theme manually.
+
+**Reference image supplied but the layout doesn't match it.**
+Layout extraction requires a `GROQ_API_KEY` — without one, only colors are sampled and the layout falls back to the data-driven default. Check that the key is set and that the reference image clearly shows the dashboard structure (card tiles, chart panels, filter sidebar).
+
+---
+
+## Project state
+
+This is the local-first incarnation of DashMCP. Railway deployment is **not** the supported path right now — everything is designed to run on your machine, talk to local CSVs and databases, and write `.pbit` files into `generated_reports/`.
+
+The roadmap (see `.claude/plans/`) covers:
+- Phase 1: SQL connectors (✅ this release).
+- Phase 2: joined multi-table models with auto-relationship inference.
+- Phase 3: read the model out of an open Power BI Desktop session via a .NET helper.

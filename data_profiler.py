@@ -62,7 +62,6 @@ def _col_key(name: str) -> str:
     return name.lower().replace(" ", "_").replace("-", "_")
 
 
-# Robust column type inference with confidence thresholding
 def _infer_type(values: list[str]) -> str:
     non_null = [v.strip() for v in values if v.strip() not in ("", "null", "NULL", "None", "NA", "N/A")]
     if not non_null:
