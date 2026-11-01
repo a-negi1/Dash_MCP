@@ -23,7 +23,7 @@ _mcp_asgi = mcp.http_app(path="/", transport="streamable-http")
 app = FastAPI(
     title="DashMCP PBI",
     description="Power BI .pbix generator with image theming, NL editing, and MCP support",
-    version="0.9.0",
+    version="1.0.0",
     lifespan=_mcp_asgi.lifespan,
 )
 
